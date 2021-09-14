@@ -15,10 +15,10 @@ rename!(x -> replace(x, " " => "_"), dd)
 fig = barplot(dd[!,:Percent_of_all_deaths],
               color = [:red, :green],
               axis = (xticks = (1:2, ["Not" , "Vaccinated"]), 
-                      title = "% of All Deaths in England by Vaccination Status\nJan 2021-Jul 2021",
+                      title = "Causes of Death within Vaccination Status Groups\nEngland Jan 2021-Jul 2021",
                       ylabel = "%"),
               bar_labels = :y,
-              label_formatter = x-> "$(x)%",
+              label_formatter = x-> "$(x)% of deaths in this\ngroup from COVID19",
               label_offset = 10,
               flip_labels_at = 10
 )
