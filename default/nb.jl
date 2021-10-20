@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.16.1
+# v0.16.3
 
 using Markdown
 using InteractiveUtils
@@ -10,14 +10,13 @@ using InteractiveUtils
 begin
 	using Plots
 	using LaTeXStrings
-	using Calculus
 end
 
 # ╔═╡ 0c019e8e-30d4-11ec-21d4-013ad1eb5cae
 md"""
 # Extreme Value Shocks in Default Models
 
-This notebook is based closely on the material Kurt Mitman has very helpfully shared with me. All errors are mine. (their code works! 😄)
+This notebook is an almost literal copy of the material Kurt Mitman has very helpfully shared with me. I added some errors, at most 😄.
 
 ## Simple Model
 
@@ -118,7 +117,7 @@ function VFI(p::NamedTuple)
 		end
 		# fill in policy function
 		m.policy[:,:] .= m.jmaxc
-		m.policy[m.d .== 2] .= 1 # when default optimal, set policy to lowest level
+		m.policy[m.d .== 2] .= 0 # when default optimal, set policy to zero
 		
 		# update q
 		m.qi[:] .= (m.d .== 1) * p.π / p.Rh
@@ -138,8 +137,9 @@ function p_vb(m,pa)
 	plot!(v, m.b_grid, m.v[:,2], label = "high-y", color = :red)
 	plot!(v, m.b_grid, m.vma[:,2], label = "",color = :red, linestyle = :dash)
 	
-	p = plot(m.b_grid, m.b_grid[m.policy[:,1]], leg = false,color = :blue, title = "b-policies")
-	plot!(p,m.b_grid, m.b_grid[m.policy[:,2]], color = :red)
+	f = [m.policy[:,i] .> 0 for i in 1:2]
+	p = plot(m.b_grid[f[1]], m.b_grid[m.policy[f[1],1]], leg = false,color = :blue, title = "b-policies")
+	plot!(p,m.b_grid[f[2]], m.b_grid[m.policy[f[2],2]], color = :red)
 
 	plot(v,p, layout = (1,2))
 	
@@ -182,9 +182,13 @@ function p_c(m,pa)
 	irisk = findfirst(m.q .< 1/pa.Rh)
 	brisk = m.b_grid[irisk]
 	
-	c = plot(m.b_grid, (2 .- m.d[:,1]) .* (pa.y[1] .+ m.b_grid[m.policy[:,1]] .* m.q[m.policy[:,1]] .- m.b_grid) ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
-	plot!(c,m.b_grid, 
-		(2 .- m.d[:,2]) .* (pa.y[2] .+ m.b_grid[m.policy[:,2]] .* m.q[m.policy[:,2]] .- m.b_grid), label = "high-y",color = :red)
+	f = [m.policy[:,i] .> 0 for i in 1:2]
+
+
+	
+	c = plot(m.b_grid[f[1]], (pa.y[1] .+ m.b_grid[m.policy[f[1],1]] .* m.q[m.policy[f[1],1]] .- m.b_grid[f[1]]) ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
+	plot!(c,m.b_grid[f[2]], 
+		(pa.y[2] .+ m.b_grid[m.policy[f[2],2]] .* m.q[m.policy[f[2],2]] .- m.b_grid[f[2]]), label = "high-y",color = :red)
 
 end
 
@@ -244,7 +248,7 @@ md"""
 * So we have now
 $$V^0(b,y) = \mathbb{E}_\epsilon \left[ \max_{p\in\{0,1\}} p(V(b,y) + \epsilon) + (1-p)(V^d(y)+\epsilon^d) \right]$$
 * as per the above, the conditional choice probability to repay is
-$$p(b,y) = \frac{\exp(\alpha V(b,y))}{ \exp(\alpha V(b,y)) + \exp(\alpha V^d(y))}$$
+$$p(b,y) = \frac{\exp(\alpha V(b,y))}{ \exp(\alpha V(b,y)) + \exp(\alpha V^d(y))} = \frac{1}{1 + e^{\alpha(V^d(y') - V(b',y'))}}$$
 * Also, the definition of $Q$ now involves the *probability* rather than the discrete step function $p$ from before:
 $$Q(b',y) = \frac{b'}{R} \mathbb{E}_{y'|y} \left[p(b',y')\right] = \frac{b'}{R} \mathbb{E}_{y'|y} \left[\frac{\exp(\alpha V(b',y'))}{ \exp(\alpha V(b',y')) + \exp(\alpha V^d(y'))}\right]$$
 * Finally, we have the closed-form *log-sum* expression for the function $V^0$:
@@ -269,7 +273,7 @@ function VFI_ϵ(p::NamedTuple)
 					m.vmc[i,s], m.jmaxc[i,s] = findmax(m.vsearchc[i,:,s])
 					# maximal discrete choice
 					expsum = exp(p.α * m.vmc[i,s]) + exp(p.α * m.vma[i,s])
-					m.d[i,s] = exp(p.α * m.vmc[i,s]) / expsum
+					m.d[i,s] = exp(p.α * m.vmc[i,s]) / expsum  # p in math
 					m.vi[i,s] = p.euler/p.α + 1/p.α * log(expsum)
 					# m.vi[i,s] = p.euler/p.α + m.vma[i,s] + 1/p.α * log(1 + exp(p.α * m.vmc[i,s]-m.vma[i,s]))
 				end
@@ -279,7 +283,7 @@ function VFI_ϵ(p::NamedTuple)
 		end
 		# fill in policy function
 		m.policy[:,:] .= m.jmaxc
-		m.policy[m.d .== 1] .= 1 # when default optimal, set policy to lowest level
+		m.policy[m.d .== 0.0] .= 0 # when default optimal, set policy to lowest level
 		
 		# update q
 		m.qi[:] .= m.d * p.π / p.Rh
@@ -301,105 +305,27 @@ function p_cϵ(m,pa)
 	irisk = findfirst(m.q .< 1/pa.Rh)
 	brisk = m.b_grid[irisk]
 	
+	# feasible
+	f = [m.policy[:,i] .> 0 for i in 1:2]
 		# consumption functions
-	cf = [(pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid) for i in 1:2]
-	cf[1][cf[1] .< 0] .= 0.0
-	cf[2][cf[2] .< 0] .= 0.0
+	cf = [(pa.y[i] .+ m.b_grid[m.policy[f[i],i]] .* m.q[m.policy[f[i],i]] .- m.b_grid[f[i]]) for i in 1:2]
 	
-	c = plot(m.b_grid, cf[1] ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
-	plot!(c,m.b_grid, cf[2], label = "high-y",color = :red)
+	c = plot(m.b_grid[f[1]], cf[1] ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
+	plot!(c,m.b_grid[f[2]], cf[2], label = "high-y",color = :red)
 
 end
 
 # ╔═╡ 36030bd9-7716-464c-9a71-c7868365c787
 p_vb(m2,p)
 
+# ╔═╡ 4b2a0d4b-6fa0-40e9-ba37-4744726bd448
+minimum(m2.d[:,1])
+
 # ╔═╡ 8753690f-d5cc-48a8-a141-d1ea125cdefe
 p_Q(m2,p)
 
 # ╔═╡ dafe90a9-2705-4b7f-8b46-9851539dcd02
 p_cϵ(m2,p)
-
-# ╔═╡ 3992216a-27a9-45e6-8802-c19cda55a34a
-md"""## Does the Envelope Condition Hold?
-
-* A key question for applicability for EGM is whether the envelope condition is valid all points in the grid.
-* Remember that this condition is derived via
-$$V'(b,y) = \frac{dV(b,y)}{d b} = \frac{d \left[u(y + Q(b',y) - b) + \beta E_{y'|y} \right]}{d b} = -u'(c(b,y))$$
-* There are several papers that make the point that if $V$ is not differentiable at $b^*$, it may still be the case that the left and right derivatives are defined (and equal to $u'(b^*)$). See for example [Clausen and Strub](https://andrewclausen.net/Clausen_Strub_Reverse_Calculus.pdf) (JET 2020)
-* We can numerically check whether this is true: Let's just plot $V'(b)$ and $u'(c)$.
-"""
-
-# ╔═╡ 02e2d68f-77e1-41bf-a4fa-1cb6159b478d
-function ∂Q∂b(m::NamedTuple, pa::NamedTuple)
-		# todays consumption values
-	cf = [pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid for i in 1:2]
-	# cf[1][cf[1] .<= 0] .= 0.0
-	# cf[2][cf[2] .<= 0] .= 0.0
-	
-	bp = [m.b_grid[m.policy[:,i]] for i in 1:2]
-
-	# analytical derivative
-	# -1/pa.Rh .* (
-	# pa.π[1] * ( m.d[:,1] .- bp[1] .* m.d[:,1] .* pa.α .* (1.0 .- m.d[:,1]) .* cf[1].^(-pa.σ) )+   
-	# pa.π[2] * ( m.d[:,2] .- bp[2] .* m.d[:,2] .* pa.α .* (1.0 .- m.d[:,2]) .* cf[2].^(-pa.σ) ))
-	
-	# kurt
-		-1/pa.Rh .* (
-	pa.π[1] * ( m.d[:,1] .* pa.α .* (1.0 .- m.d[:,1]) .* cf[1].^(-pa.σ) ) +   
-	pa.π[2] * ( m.d[:,2] .* pa.α .* (1.0 .- m.d[:,2]) .* cf[2].^(-pa.σ) ) ) .* m.b_grid .+ m.q
-	
-end
-
-# ╔═╡ 12a6e394-1e89-45cc-bd5a-55d5c2215a39
-plot(m2.b_grid, ∂Q∂b(m2,p))
-
-# ╔═╡ c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
-function p_derivs(m::NamedTuple,pa::NamedTuple)
-
-	
-	# todays consumption values
-	cf = [pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid for i in 1:2]
-	cf[1][cf[1] .<= 0] .= 0.0
-	cf[2][cf[2] .<= 0] .= 0.0
-	
-	# need to take into account either d or Prob(d) here
-	noev = maximum(m.d) == 2 # no EV shocks, d is 1 and 2
-	
-	if !noev
-		laffer = m.b_grid .* m.qi
-		dlaffer = diff(laffer) ./ diff(m.b_grid) # simple numerical derivative
-		∂Q∂b = -1/pa.Rh .* 
-		(pa.π[1] * (m.d[:,1] .- pa.α * m.d[:,1] .* (1.0 .- m.d[:,1]) * cf[:,1].^(-pa.σ) )+   pa.π[2] * (m.d[:,2] .- pa.α * m.d[:,2] .* (1.0 .- m.d[:,2]) * cf[:,2].^(-pa.σ) ))
-		cplus = (pa.β * (pa.π[1] .* m.d[:,1] .* cf[1].^(-pa.σ) +
-           				 pa.π[2] .* m.d[:,2] .* cf[2].^(-pa.σ)))
-		cf[1] = pa.y[1] .+ m.q[m.policy[:,1]] .* m.b_grid - cplus
-		cf[2] = pa.y[2] .+ m.q[m.policy[:,2]] .* m.b_grid - cplus
-	end
-	
-	
-	# dv/db
-	dvdb = [-diff(m.v[:,i]) ./ diff(m.b_grid) for i in 1:2]
-	uprime = [i.^(-pa.σ) for i in cf]
-	
-	plot(m.b_grid[2:end], dvdb[1], label = L"-dV/db (low)", color = :blue)
-	plot!(m.b_grid, uprime[1], label = L"u'(c) (low)",linestyle = :dash, color = :blue)
-	plot!(m.b_grid[2:end], dvdb[2], label = L"-dV/db  (high)",color = :red)
-	plot!(m.b_grid, uprime[2], label = L"u'(c) (high)",linestyle = :dash,color = :red)
-	ylims!(0,25)
-end
-
-# ╔═╡ 2c6600c3-c943-4ee8-ac1a-3c2948090655
-p_derivs(m2,p)
-
-# ╔═╡ d5931855-9767-4da5-8771-82b8b1a36f3e
-p_derivs(mx,p)
-
-# ╔═╡ fab95c31-ef1a-4f85-9b2b-161f5a8aa4d4
-xx = [i.^(-p.σ) for i in c]
-
-# ╔═╡ de6d682e-73b8-4ea6-9d92-19836ba3997f
-plot(c[1])
 
 # ╔═╡ 8381bb5d-b46e-4cd8-b85c-81584379feaf
 md"""
@@ -409,24 +335,116 @@ We call $Q(b)$ the *laffer curve*: we obtain increasingly more debt as we keep i
 
 Regions where this curve is downward sloping before going back up again are trouble-some for an EGM algorithm. We need to take care of those regions.
 
-### Derivatives of Laffer Curve
+### Derivative of Laffer Curve
+
+Remember the definition:
+
+$$Q(b',y) = \frac{b'}{R} \mathbb{E}_{y'|y} \left[p(b',y')\right] = \frac{b'}{R} \mathbb{E}_{y'|y} \left(1 + e^{\alpha(V^d(y') - V(b',y'))}\right)^{-1}$$
+
+for our implementation, keep in mind that also $$Q(b',y) = b' E[q(b',y')]$$ where 
+
+$$q(b',y') = \frac{p(b',y')}{R},$$
+
+hence we have 
+
+$$\begin{align}
+\frac{\partial Q(b',y')}{\partial b'} &= \frac{\partial b' E[q(b',y')]}{\partial b'}\\
+&= 1 \cdot E[q(b',y')] + b' \cdot E\left[\frac{d q(b',y')}{db'}\right]\\
+&= q(b',y') + b' \cdot E\left[\frac{d \frac{p(b',y')}{R}}{db'}\right]\\
+&= q(b',y') + b' \cdot E\left[ \frac{1}{R} (-1) \left(1 + e^{\alpha(V^d(y') - V(b',y'))}\right)^{-2}   \right.\\
+& \times \left. \left(e^{\alpha(V^d(y') - V(b',y'))}\right) \cdot \left(-\alpha \frac{dV(b',y')}{db'}\right) \right]\\
+&= q(b',y') - b'\frac{1}{R} \cdot E\left[ \alpha p(b',y') (1- p(b',y'))  \left(-\frac{dV(b',y')}{db'}\right)\right]\\
+\end{align}$$
+
+Now, the conjecture is that the envelope condition 
+
+$$V'(b,y) = \frac{dV(b,y)}{d b} = \frac{d \left[u(y + Q(b',y) - b) + \beta E_{y'|y} \right]}{d b} = -u'(c(b,y))$$
+
+holds everywhere. 
+
+* There are several papers that make the point that if $V$ is not differentiable at $b^*$, it may still be the case that the left and right derivatives are defined (and equal to $u'(b^*)$). See for example [Clausen and Strub](https://andrewclausen.net/Clausen_Strub_Reverse_Calculus.pdf) (JET 2020)
+
+In that case, replace the last term in the above and get
+
+$$\frac{\partial Q(b',y')}{\partial b'} = q(b',y') - b'\frac{1}{R} \cdot E\left[ \alpha p(b',y') (1- p(b',y'))  u'(c(b',y'))\right]$$
 
 
+### Checking Conjecture
+
+First though let's check that indeed the derivatives of value function and marginal utility coincide around the non differentiable points:
 
 """
 
-# ╔═╡ 11ebf49f-eff3-4e57-a850-6caeb0a564a7
-dlaffer = diff(m2.b_grid .* m2.qi) ./ diff(m2.b_grid)
+# ╔═╡ 02e2d68f-77e1-41bf-a4fa-1cb6159b478d
+function ∂Q∂b(m::NamedTuple, pa::NamedTuple)
+
+	# feasible
+	f = [m.policy[:,i] .> 0 for i in 1:2]
+	# todays consumption values
+	cf = [pa.y[i] .+ m.b_grid[m.policy[f[i],i]] .* m.q[m.policy[f[i],i]] .- m.b_grid[f[i]]  for i in 1:2]
+	c = zeros(pa.I,2)
+	c[f[1],1] .= cf[1]
+	c[f[2],2] .= cf[2]	
+	
+	m.q .- m.b_grid/pa.Rh .* (
+	pa.π[1] * ( m.d[:,1] .* pa.α .* (1.0 .- m.d[:,1]) .* c[:,1].^(-pa.σ) ) +   
+	pa.π[2] * ( m.d[:,2] .* pa.α .* (1.0 .- m.d[:,2]) .* c[:,2].^(-pa.σ) ) 
+	)
+	
+end
+
+# ╔═╡ 76febe91-c8e5-4117-a06f-a5929c48444d
+md"""
+let's plot this analytic version next to a numerical derivative of the $Q$ function.
+"""
+
+# ╔═╡ 12a6e394-1e89-45cc-bd5a-55d5c2215a39
+let
+	laffer = m2.b_grid .* m2.qi
+	dlaffer = diff(laffer) ./ diff(m2.b_grid)
+	plot(m2.b_grid, ∂Q∂b(m2,p),label = "analytic", title = L"dQ(b',y')/db'",
+	     legend = :bottomleft)
+	plot!(m2.b_grid[2:end], dlaffer,label = "numerical")
+end
+
+# ╔═╡ 3992216a-27a9-45e6-8802-c19cda55a34a
+md"""## Does the Envelope Condition Hold?
+
+* We can numerically check whether our conjectur is true: Let's just plot $V'(b)$ and $u'(c)$.
+"""
+
+# ╔═╡ c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
+function p_derivs(m::NamedTuple,pa::NamedTuple,titl)
+
+	# feasible
+	f = [m.policy[:,i] .> 0 for i in 1:2]
+	# consumption functions
+	cf = [(pa.y[i] .+ m.b_grid[m.policy[f[i],i]] .* m.q[m.policy[f[i],i]] .- m.b_grid[f[i]]) for i in 1:2]
+	
+	# dv/db
+	dvdb = [-diff(m.v[:,i]) ./ diff(m.b_grid) for i in 1:2]
+	uprime = [i.^(-pa.σ) for i in cf]
+	
+	plot(m.b_grid[2:end], dvdb[1], label = L"-dV/db (low)", color = :blue, title = titl)
+	plot!(m.b_grid[f[1]], uprime[1], label = L"u'(c) (low)",linestyle = :dash, color = :blue)
+	plot!(m.b_grid[2:end], dvdb[2], label = L"-dV/db  (high)",color = :red)
+	plot!(m.b_grid[f[2]], uprime[2], label = L"u'(c) (high)",linestyle = :dash,color = :red)
+	ylims!(0,28)
+end
+
+# ╔═╡ d5931855-9767-4da5-8771-82b8b1a36f3e
+p_derivs(mx,p,"without EV shocks")
+
+# ╔═╡ 2c6600c3-c943-4ee8-ac1a-3c2948090655
+p_derivs(m2,p,"with EV shocks")
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
-Calculus = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 
 [compat]
-Calculus = "~0.5.1"
 LaTeXStrings = "~1.2.1"
 Plots = "~1.22.6"
 """
@@ -461,12 +479,6 @@ deps = ["Artifacts", "Bzip2_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll",
 git-tree-sha1 = "f2202b55d816427cd385a9a4f3ffb226bee80f99"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.16.1+0"
-
-[[Calculus]]
-deps = ["LinearAlgebra"]
-git-tree-sha1 = "f641eb0a4f00c343bbc32346e1217b86f3ce9dad"
-uuid = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
-version = "0.5.1"
 
 [[ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
@@ -1292,22 +1304,21 @@ version = "0.9.1+5"
 # ╠═a49269d1-8b54-49c0-bb54-2cab8dd59517
 # ╠═446d0283-4648-40c8-9ca2-cb8463e3d0be
 # ╟─69c077f7-c9b1-4db4-940f-d51377aeed39
-# ╟─dffdea40-7168-46d9-bd5f-3d8a717e9785
+# ╠═dffdea40-7168-46d9-bd5f-3d8a717e9785
 # ╠═4e969b49-effa-4d96-b7df-708616d31080
 # ╠═23a9be22-450e-41bf-87cb-f4d2504b40ce
 # ╠═ba3d617d-466d-4835-bcd4-0631b58481b8
 # ╠═36030bd9-7716-464c-9a71-c7868365c787
+# ╠═4b2a0d4b-6fa0-40e9-ba37-4744726bd448
 # ╠═8753690f-d5cc-48a8-a141-d1ea125cdefe
 # ╠═dafe90a9-2705-4b7f-8b46-9851539dcd02
-# ╠═3992216a-27a9-45e6-8802-c19cda55a34a
-# ╠═02e2d68f-77e1-41bf-a4fa-1cb6159b478d
-# ╠═12a6e394-1e89-45cc-bd5a-55d5c2215a39
-# ╠═c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
-# ╠═2c6600c3-c943-4ee8-ac1a-3c2948090655
+# ╟─8381bb5d-b46e-4cd8-b85c-81584379feaf
 # ╠═d5931855-9767-4da5-8771-82b8b1a36f3e
-# ╠═fab95c31-ef1a-4f85-9b2b-161f5a8aa4d4
-# ╠═de6d682e-73b8-4ea6-9d92-19836ba3997f
-# ╠═8381bb5d-b46e-4cd8-b85c-81584379feaf
-# ╠═11ebf49f-eff3-4e57-a850-6caeb0a564a7
+# ╠═2c6600c3-c943-4ee8-ac1a-3c2948090655
+# ╠═02e2d68f-77e1-41bf-a4fa-1cb6159b478d
+# ╟─76febe91-c8e5-4117-a06f-a5929c48444d
+# ╠═12a6e394-1e89-45cc-bd5a-55d5c2215a39
+# ╠═3992216a-27a9-45e6-8802-c19cda55a34a
+# ╠═c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
