@@ -117,7 +117,7 @@ function VFI(p::NamedTuple)
 		end
 		# fill in policy function
 		m.policy[:,:] .= m.jmaxc
-		m.policy[m.d .== 2] .= 0 # when default optimal, set policy to zero
+		m.policy[m.d .== 2] .= 1 # when default optimal, set policy to lowest action
 		
 		# update q
 		m.qi[:] .= (m.d .== 1) * p.π / p.Rh
@@ -137,9 +137,8 @@ function p_vb(m,pa)
 	plot!(v, m.b_grid, m.v[:,2], label = "high-y", color = :red)
 	plot!(v, m.b_grid, m.vma[:,2], label = "",color = :red, linestyle = :dash)
 	
-	f = [m.policy[:,i] .> 0 for i in 1:2]
-	p = plot(m.b_grid[f[1]], m.b_grid[m.policy[f[1],1]], leg = false,color = :blue, title = "b-policies")
-	plot!(p,m.b_grid[f[2]], m.b_grid[m.policy[f[2],2]], color = :red)
+	p = plot(m.b_grid, m.b_grid[m.policy[:,1]], leg = false,color = :blue, title = "b-policies")
+	plot!(p,m.b_grid, m.b_grid[m.policy[:,2]], color = :red)
 
 	plot(v,p, layout = (1,2))
 	
@@ -182,13 +181,9 @@ function p_c(m,pa)
 	irisk = findfirst(m.q .< 1/pa.Rh)
 	brisk = m.b_grid[irisk]
 	
-	f = [m.policy[:,i] .> 0 for i in 1:2]
-
-
-	
-	c = plot(m.b_grid[f[1]], (pa.y[1] .+ m.b_grid[m.policy[f[1],1]] .* m.q[m.policy[f[1],1]] .- m.b_grid[f[1]]) ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
-	plot!(c,m.b_grid[f[2]], 
-		(pa.y[2] .+ m.b_grid[m.policy[f[2],2]] .* m.q[m.policy[f[2],2]] .- m.b_grid[f[2]]), label = "high-y",color = :red)
+	c = plot(m.b_grid, (pa.y[1] .+ m.b_grid[m.policy[:,1]] .* m.q[m.policy[:,1]] .- m.b_grid) ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
+	plot!(c,m.b_grid, 
+		(pa.y[2] .+ m.b_grid[m.policy[:,2]] .* m.q[m.policy[:,2]] .- m.b_grid), label = "high-y",color = :red)
 
 end
 
@@ -272,21 +267,21 @@ function VFI_ϵ(p::NamedTuple)
 					# find maximal choices
 					m.vmc[i,s], m.jmaxc[i,s] = findmax(m.vsearchc[i,:,s])
 					# maximal discrete choice
-					expsum = exp(p.α * m.vmc[i,s]) + exp(p.α * m.vma[i,s])
-					m.d[i,s] = exp(p.α * m.vmc[i,s]) / expsum  # p in math
-					m.vi[i,s] = p.euler/p.α + 1/p.α * log(expsum)
+					# expsum = exp(p.α * m.vmc[i,s]) + exp(p.α * m.vma[i,s])
+					m.d[i,s] = 1 / (1 + exp(p.α * (m.vmc[i,s] - m.vma[i,s]))) # prob of default. 
+					m.vi[i,s] = p.euler/p.α + m.vma[i,s] + 1/p.α * log(1 + exp(p.α*(m.vmc[i,s] - m.vma[i,s])))
 					# m.vi[i,s] = p.euler/p.α + m.vma[i,s] + 1/p.α * log(1 + exp(p.α * m.vmc[i,s]-m.vma[i,s]))
 				end
 			end
 			diff = maximum(abs.(m.vi .- m.v))
 			m.v[:,:] .= m.vi
 		end
-		# fill in policy function
+		# fill in policy function for repay choice
 		m.policy[:,:] .= m.jmaxc
-		m.policy[m.d .== 0.0] .= 0 # when default optimal, set policy to lowest level
+		m.policy[m.d .== 1.0] .= 1 # when default 100% optimal, set policy to lowest level
 		
 		# update q
-		m.qi[:] .= m.d * p.π / p.Rh
+		m.qi[:] .= (1 .- m.d) * p.π / p.Rh
 		diffq = sum(abs.(m.qi .- m.q) .> 0)
 		m.q[:] .= m.qi
 	end
@@ -305,21 +300,38 @@ function p_cϵ(m,pa)
 	irisk = findfirst(m.q .< 1/pa.Rh)
 	brisk = m.b_grid[irisk]
 	
-	# feasible
-	f = [m.policy[:,i] .> 0 for i in 1:2]
-		# consumption functions
-	cf = [(pa.y[i] .+ m.b_grid[m.policy[f[i],i]] .* m.q[m.policy[f[i],i]] .- m.b_grid[f[i]]) for i in 1:2]
+	# expected policy: prob(no default) * c(no default) + 
+	# consumption functions: depends on which discrete choice is taken
+	cf = [(pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid)  for i in 1:2]
+		# cf = [(1 .-m.d[:,i]) .* (pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid)  for i in 1:2]
 	
-	c = plot(m.b_grid[f[1]], cf[1] ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
-	plot!(c,m.b_grid[f[2]], cf[2], label = "high-y",color = :red)
+	c = plot(m.b_grid, cf[1] ,label = "low-y",color = :blue, title = "Consumption", xlabel = "b",ylabel = L"c(b,y)")
+	plot!(c,m.b_grid, cf[2], label = "high-y",color = :red)
 
 end
 
-# ╔═╡ 36030bd9-7716-464c-9a71-c7868365c787
-p_vb(m2,p)
+# ╔═╡ 1bf25db3-1e3c-4262-9bc4-12fd25ff1f77
+function p_vbϵ(m,pa)
+	vv = m.vmc 
+	vv[vv .<= pa.lowval] .= NaN
+	v = plot(m.b_grid, vv[:,1], label = "low-y",color = :blue, title = "Value Functions")
+	plot!(v, m.b_grid, m.vma[:,1], label = "",color = :blue, linestyle = :dash)
+	plot!(v, m.b_grid, vv[:,2], label = "high-y", color = :red)
+	plot!(v, m.b_grid, m.vma[:,2], label = "",color = :red, linestyle = :dash)
+	plot!(v, m.b_grid, m.v[:,2], label = "",color = :black)
+	plot!(v, m.b_grid, m.v[:,1], label = "EV",color = :black)
+	ylims!(v, -15,0)
+	
+	p = plot(m.b_grid, m.b_grid[m.policy[:,1]], leg = false,color = :blue, title = "b-policies")
+	plot!(p,m.b_grid, m.b_grid[m.policy[:,2]], color = :red)
 
-# ╔═╡ 4b2a0d4b-6fa0-40e9-ba37-4744726bd448
-minimum(m2.d[:,1])
+	plot(v,p, layout = (1,2))
+	
+	
+end
+
+# ╔═╡ 36030bd9-7716-464c-9a71-c7868365c787
+p_vbϵ(m2,p)
 
 # ╔═╡ 8753690f-d5cc-48a8-a141-d1ea125cdefe
 p_Q(m2,p)
@@ -371,24 +383,45 @@ $$\frac{\partial Q(b',y')}{\partial b'} = q(b',y') - b'\frac{1}{R} \cdot E\left[
 
 ### Checking Conjecture
 
-First though let's check that indeed the derivatives of value function and marginal utility coincide around the non differentiable points:
+First though let's check that indeed the derivatives of value function and marginal utility coincide around the non differentiable points. We want to plot $dV/db$ and $u'(c)$, for each case with and without EV shocks:
 
 """
+
+# ╔═╡ c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
+function p_derivs(m::NamedTuple,pa::NamedTuple,titl)
+
+	# consumption function
+		cf = [(pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid) for i in 1:2]
+
+	cf[1][cf[1] .<= 0.0] .= NaN
+	cf[2][cf[2] .<= 0.0] .= NaN
+	
+	# dv/db
+	dvdb = [-diff(m.v[:,i]) ./ diff(m.b_grid) for i in 1:2]
+	uprime = [i.^(-pa.σ) for i in cf]
+	
+	plot(m.b_grid[2:end], dvdb[1], label = L"-dV/db (low)", color = :blue, title = titl)
+	plot!(m.b_grid, uprime[1], label = L"u'(c) (low)",linestyle = :dash, color = :blue)
+	plot!(m.b_grid[2:end], dvdb[2], label = L"-dV/db  (high)",color = :red)
+	plot!(m.b_grid, uprime[2], label = L"u'(c) (high)",linestyle = :dash,color = :red)
+	ylims!(0,28)
+end
+
+# ╔═╡ d5931855-9767-4da5-8771-82b8b1a36f3e
+p_derivs(mx,p,"without EV shocks")
+
+# ╔═╡ 2c6600c3-c943-4ee8-ac1a-3c2948090655
+p_derivs(m2,p,"with EV shocks")
 
 # ╔═╡ 02e2d68f-77e1-41bf-a4fa-1cb6159b478d
 function ∂Q∂b(m::NamedTuple, pa::NamedTuple)
 
-	# feasible
-	f = [m.policy[:,i] .> 0 for i in 1:2]
 	# todays consumption values
-	cf = [pa.y[i] .+ m.b_grid[m.policy[f[i],i]] .* m.q[m.policy[f[i],i]] .- m.b_grid[f[i]]  for i in 1:2]
-	c = zeros(pa.I,2)
-	c[f[1],1] .= cf[1]
-	c[f[2],2] .= cf[2]	
+	cf = [pa.y[i] .+ m.b_grid[m.policy[:,i]] .* m.q[m.policy[:,i]] .- m.b_grid  for i in 1:2]
 	
 	m.q .- m.b_grid/pa.Rh .* (
-	pa.π[1] * ( m.d[:,1] .* pa.α .* (1.0 .- m.d[:,1]) .* c[:,1].^(-pa.σ) ) +   
-	pa.π[2] * ( m.d[:,2] .* pa.α .* (1.0 .- m.d[:,2]) .* c[:,2].^(-pa.σ) ) 
+	pa.π[1] * ( m.d[:,1] .* pa.α .* (1.0 .- m.d[:,1]) .* cf[1].^(-pa.σ) ) +   
+	pa.π[2] * ( m.d[:,2] .* pa.α .* (1.0 .- m.d[:,2]) .* cf[2].^(-pa.σ) ) 
 	)
 	
 end
@@ -406,37 +439,6 @@ let
 	     legend = :bottomleft)
 	plot!(m2.b_grid[2:end], dlaffer,label = "numerical")
 end
-
-# ╔═╡ 3992216a-27a9-45e6-8802-c19cda55a34a
-md"""## Does the Envelope Condition Hold?
-
-* We can numerically check whether our conjectur is true: Let's just plot $V'(b)$ and $u'(c)$.
-"""
-
-# ╔═╡ c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
-function p_derivs(m::NamedTuple,pa::NamedTuple,titl)
-
-	# feasible
-	f = [m.policy[:,i] .> 0 for i in 1:2]
-	# consumption functions
-	cf = [(pa.y[i] .+ m.b_grid[m.policy[f[i],i]] .* m.q[m.policy[f[i],i]] .- m.b_grid[f[i]]) for i in 1:2]
-	
-	# dv/db
-	dvdb = [-diff(m.v[:,i]) ./ diff(m.b_grid) for i in 1:2]
-	uprime = [i.^(-pa.σ) for i in cf]
-	
-	plot(m.b_grid[2:end], dvdb[1], label = L"-dV/db (low)", color = :blue, title = titl)
-	plot!(m.b_grid[f[1]], uprime[1], label = L"u'(c) (low)",linestyle = :dash, color = :blue)
-	plot!(m.b_grid[2:end], dvdb[2], label = L"-dV/db  (high)",color = :red)
-	plot!(m.b_grid[f[2]], uprime[2], label = L"u'(c) (high)",linestyle = :dash,color = :red)
-	ylims!(0,28)
-end
-
-# ╔═╡ d5931855-9767-4da5-8771-82b8b1a36f3e
-p_derivs(mx,p,"without EV shocks")
-
-# ╔═╡ 2c6600c3-c943-4ee8-ac1a-3c2948090655
-p_derivs(m2,p,"with EV shocks")
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1304,21 +1306,20 @@ version = "0.9.1+5"
 # ╠═a49269d1-8b54-49c0-bb54-2cab8dd59517
 # ╠═446d0283-4648-40c8-9ca2-cb8463e3d0be
 # ╟─69c077f7-c9b1-4db4-940f-d51377aeed39
-# ╠═dffdea40-7168-46d9-bd5f-3d8a717e9785
+# ╟─dffdea40-7168-46d9-bd5f-3d8a717e9785
 # ╠═4e969b49-effa-4d96-b7df-708616d31080
 # ╠═23a9be22-450e-41bf-87cb-f4d2504b40ce
 # ╠═ba3d617d-466d-4835-bcd4-0631b58481b8
+# ╠═1bf25db3-1e3c-4262-9bc4-12fd25ff1f77
 # ╠═36030bd9-7716-464c-9a71-c7868365c787
-# ╠═4b2a0d4b-6fa0-40e9-ba37-4744726bd448
 # ╠═8753690f-d5cc-48a8-a141-d1ea125cdefe
 # ╠═dafe90a9-2705-4b7f-8b46-9851539dcd02
 # ╟─8381bb5d-b46e-4cd8-b85c-81584379feaf
 # ╠═d5931855-9767-4da5-8771-82b8b1a36f3e
 # ╠═2c6600c3-c943-4ee8-ac1a-3c2948090655
+# ╠═c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
 # ╠═02e2d68f-77e1-41bf-a4fa-1cb6159b478d
 # ╟─76febe91-c8e5-4117-a06f-a5929c48444d
 # ╠═12a6e394-1e89-45cc-bd5a-55d5c2215a39
-# ╠═3992216a-27a9-45e6-8802-c19cda55a34a
-# ╠═c5b97ce2-4ff5-46bc-b52d-ff83aef048e2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
